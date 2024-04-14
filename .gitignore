@@ -1,0 +1,12 @@
+*.o
+build
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles/
+Makefile
+bee.db
+cmake_install.cmake
+lib/include/
+lib/libsqlparser.so
+patch/*
+**/.DS_Store
