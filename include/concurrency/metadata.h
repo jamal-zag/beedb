@@ -119,7 +119,7 @@ class Metadata
      */
     void end_timestamp(const timestamp timestamp)
     {
-        _end_timestamp.store(timestamp);
+        _end_timestamp = timestamp;
     }
 
     /**
