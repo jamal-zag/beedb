@@ -84,12 +84,15 @@ beedb::storage::Page *Manager::pin(beedb::storage::Page::id_t page_id)
         {
             this->_space_manager.write(page.id(), page.data());
         }
-
+        
         // Load page into frame.
         page.id(page_id);
         page.is_dirty(false);
         page.pin_count(1u);
         this->_space_manager.read(page_id, page.data());
+
+        // Notify replacement strategy.
+        this->_replacement_strategy->on_pin(frame_index, this->_pin_sequence);
 
         // Clear frame information.
         this->_evicted_frames++;
