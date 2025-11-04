@@ -22,6 +22,7 @@
 
 #include <buffer/lfu_strategy.h>
 #include <exception/disk_exception.h>
+#include <limits>                       // For std::numeric_limits
 
 using namespace beedb::buffer;
 
@@ -63,9 +64,35 @@ std::size_t LFUStrategy::find_victim([[maybe_unused]] std::vector<storage::Page>
      *  - Return the index of that page.
      */
 
-    std::size_t evict_index{0U};
+    auto evict_index = static_cast<std::size_t>(-1); // Changed from {0U} - "not found"
 
-    // TODO: Insert your code here.
+    std::size_t min_frequency = std::numeric_limits<std::size_t>::max();
 
+    // - Scan the pages and find those that are not pinned
+    for (std::size_t i = 0; i < this->_pin_count.size(); ++i)
+    {
+        if (pages[i].is_pinned())
+        {
+            continue;
+        }
+
+        // - Select the page with the lowest number of all pins.
+        if (this->_pin_count[i] < min_frequency)
+        {
+            min_frequency = this->_pin_count[i];
+            evict_index = i;
+        }
+    }
+
+    // - If there is no free page throw "exception::NoFreeFrameException()".
+    if (evict_index == static_cast<std::size_t>(-1))
+    {
+        throw exception::NoFreeFrameException();
+    }
+
+    // - Reset the pin count of the selected page to 0.
+    this->_pin_count[evict_index] = 0;
+
+    // - Return the index of that page.
     return evict_index;
 }

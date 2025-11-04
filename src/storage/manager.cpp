@@ -81,7 +81,17 @@ void Manager::read([[maybe_unused]] const Page::id_t page_id, [[maybe_unused]] s
      * [2] https://en.cppreference.com/w/cpp/io/basic_istream/read
      */
 
-    // TODO: Insert your code here.
+    // Calculate the byte offset from the beginning of the file
+    // We cast to std::streamoff to ensure the multiplication is done with the correct type for seeking.
+    std::streamoff offset = static_cast<std::streamoff>(page_id) * Config::page_size;
+
+    // 1. Seek this->_storage_file to the beginning of the page [1].
+    // We use seekg() for "get" (input/read) operations.
+    this->_storage_file.seekg(offset);
+
+    // 2. Read the full page into the given buffer [2]
+    // .read() expects a char*, so we must reinterpret_cast the std::byte* buffer.
+    this->_storage_file.read(reinterpret_cast<char*>(buffer), Config::page_size);
 }
 
 void Manager::write([[maybe_unused]] const Page::id_t page_id, [[maybe_unused]] const std::byte *data)
@@ -117,5 +127,18 @@ void Manager::write([[maybe_unused]] const Page::id_t page_id, [[maybe_unused]] 
      * [2] https://en.cppreference.com/w/cpp/io/basic_ostream/write
      */
 
-    // TODO: Insert your code here.
+    // Calculate the byte offset from the beginning of the file
+    std::streamoff offset = static_cast<std::streamoff>(page_id) * Config::page_size;
+
+    // 1. Seek this->_storage_file to the beginning of the page [1].
+    // We use seekp() for "put" (output/write) operations.
+    this->_storage_file.seekp(offset);
+
+    // 2. Write the given buffer to the file [2].
+    // .write() expects a const char*, so we must reinterpret_cast the const std::byte* data.
+    this->_storage_file.write(reinterpret_cast<const char*>(data), Config::page_size);
+
+    // It's crucial for a storage manager to ensure data is persistent.
+    // We flush the file stream to force the OS to write the buffer to disk.
+    this->_storage_file.flush();
 }

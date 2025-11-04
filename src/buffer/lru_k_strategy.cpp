@@ -22,6 +22,7 @@
 
 #include <buffer/lru_k_strategy.h>
 #include <exception/disk_exception.h>
+#include <limits>                       // For std::numeric_limits
 
 using namespace beedb::buffer;
 
@@ -35,7 +36,7 @@ void LRUKStrategy::on_pin(std::size_t frame_index, std::size_t timestamp)
     this->_history[frame_index].push_back(timestamp);
 }
 
-std::size_t LRUKStrategy::find_victim([[maybe_unused]] std::vector<storage::Page> &pages)
+std::size_t LRUKStrategy::find_victim(std::vector<storage::Page> &pages)
 {
     /**
      * Assignment (1): Implement the Least Recently Used eviction strategy with regard
@@ -70,9 +71,66 @@ std::size_t LRUKStrategy::find_victim([[maybe_unused]] std::vector<storage::Page
      *  - Return the index to that page.
      */
 
-    std::size_t evict_index{0U};
+    auto evict_index = static_cast<std::size_t>(-1); // Changed from {0U} - "not found"
+    std::size_t victim_group1_timestamp = std::numeric_limits<std::size_t>::max();
 
-    // TODO: Insert your code here.
+    // We still need a separate tracker for the Group 2 winner
+    auto victim_group2_index = static_cast<std::size_t>(-1);
+    std::size_t victim_group2_k_timestamp = std::numeric_limits<std::size_t>::max();
 
+    for (std::size_t i = 0; i < this->_history.size(); ++i)
+    {
+        // Rule 1: Skip pinned pages
+        if (pages[i].is_pinned())
+        {
+            continue;
+        }
+
+        const auto& frame_history = this->_history[i];
+
+        // Rule 2: Check Group 1 (fewer than k pins)
+        if (frame_history.size() < this->_k)
+        {
+            // Find page with the lowest *last* pin timestamp
+            std::size_t last_ts = this->last_timestamp(i);
+            if (last_ts < victim_group1_timestamp)
+            {
+                victim_group1_timestamp = last_ts;
+                evict_index = i; // Store the best-so-far from Group 1
+            }
+        }
+        // Rule 3: Check Group 2 (k or more pins)
+        else
+        {
+            // Find page with the lowest *k-th last* pin timestamp
+            std::size_t k_ts = frame_history[frame_history.size() - this->_k];
+            if (k_ts < victim_group2_k_timestamp)
+            {
+                victim_group2_k_timestamp = k_ts;
+                victim_group2_index = i; // Store the best-so-far from Group 2
+            }
+        }
+    }
+
+    // --- Decision Time ---
+
+    // Priority: If we found a victim in Group 1, we MUST use it.
+    // evict_index already holds the best Group 1 victim (or -1).
+    // If it's still -1 (meaning Group 1 was empty), we check Group 2.
+    if (evict_index == static_cast<std::size_t>(-1))
+    {
+        evict_index = victim_group2_index;
+    }
+
+    // Error check: If evict_index is *still* -1, no unpinned frames were found.
+    if (evict_index == static_cast<std::size_t>(-1))
+    {
+        throw exception::NoFreeFrameException();
+    }
+
+    // "Clear the history of the selected page"
+    this->_history[evict_index].clear();
+
+    // "Return the index to that page."
     return evict_index;
 }
