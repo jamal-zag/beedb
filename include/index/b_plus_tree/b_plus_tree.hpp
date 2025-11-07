@@ -63,18 +63,30 @@ BPlusTreeNode<K, V, U> *BPlusTree<K, V, U>::locate_leaf(
      *  - Return the leaf you found during traversal.
      */
 
+    // 1. "Start the traversal at the root node."
+    //    (This assumes _root is a direct pointer to the root node in memory)
     Node *current_node = this->_root;
 
+    // 2. Loop "while 'current_node' is not a leaf."
+    //    'is_inner()' is the opposite of 'is_leaf()'.
     while (current_node->is_inner())
     {
+        // 3. "Push every node to the 'node_path', if 'node_path != nullptr'."
+        //    This is used by 'insert' to trace its path for potential splits.
         if (node_path)
         {
             node_path->push_back(current_node);
         }
 
+        // 4. "Get the next node using 'current_node->child(key)'..."
+        //    This helper method finds the correct child pointer for the 'key'
+        //    and returns the child node to continue the traversal.
         current_node = current_node->child(key);
     }
 
+    // 5. "Return the leaf you found during traversal."
+    //    The loop has terminated, meaning 'current_node->is_inner()' was false,
+    //    so 'current_node' must be the correct leaf.
     return current_node;
 }
 
@@ -189,35 +201,65 @@ std::optional<std::set<V>> BPlusTree<K, V, U>::get([[maybe_unused]] const K key_
      *    (and also the rights right,...).
      */
 
+    // A std::set is used to collect all unique values (V) found.
     std::set<V> values;
 
+    // 1. "Locate the leaf node that may contain the wanted key."
+    //    We start by finding the leaf where 'key_from' would be.
     auto *leaf = this->locate_leaf(key_from);
 
+    // 2. Start a loop that will scan horizontally (leaf by leaf)
+    //    as long as 'leaf' points to a valid node.
     while (leaf != nullptr)
     {
+        // 3. Find the starting position within the current leaf.
+        //    'leaf->index(key_from)' gives the index of the first key >= 'key_from'.
+        // 4. Iterate from that starting index to the end of the *current* leaf's keys.
         for (auto i = leaf->index(key_from); i < leaf->size(); i++)
         {
+            // 5. Get the key at the current index.
             const auto key = leaf->leaf_key(i);
+
+            // 6. "Add all keys that are equal or greater than the key 'key_from'
+            //    and equal or lesser than the key 'key_to'..."
+            //    (Note: This code implements key < key_to, not <= key_to)
             if (key >= key_from && key < key_to)
             {
-                if constexpr (U)
+                // 7. The key is in range. Add its value(s) to the set.
+                //    We must use 'if constexpr' to handle the two
+                //    different tree types (Unique vs. Non-Unique).
+
+                if constexpr (U) // 'U' is true (Unique tree)
                 {
+                    // For a unique tree, 'leaf->value(i)' returns a single value 'V'.
                     values.insert(leaf->value(i));
                 }
-                else
+                else // 'U' is false (Non-Unique tree)
                 {
-                    auto value = leaf->value(i);
-                    values.insert(value.begin(), value.end());
+                    // For a non-unique tree, 'leaf->value(i)' returns a 'std::set<V>'.
+                    auto value_set = leaf->value(i);
+                    // We must add all values from that set into our main 'values' set.
+                    values.insert(value_set.begin(), value_set.end());
                 }
             }
+            // (If key >= key_to, we just continue iterating until the
+            //  end of this leaf, as an earlier key might have been < key_to)
         }
 
+        // 8. "When the last key ... matches ... take a look to the right neighbour"
+        //    We check the *last key* in this leaf. If it's still less than
+        //    'key_to', the range might continue. We also must check
+        //    that a 'right()' neighbor actually exists.
         if (leaf->leaf_key(leaf->size() - 1) < key_to && leaf->right() != nullptr)
         {
+            // 9. Move to the next leaf node to continue the scan.
             leaf = leaf->right();
         }
         else
         {
+            // 10. Stop scanning. This happens if:
+            //     a) The last key in this leaf was >= 'key_to', so no further keys can be in the range.
+            //     b) We are at the right-most leaf (leaf->right() is null).
             leaf = nullptr;
         }
     }
@@ -267,35 +309,66 @@ BPlusTreeNode<K, V, U> *BPlusTree<K, V, U>::insert_into_leaf([[maybe_unused]] BP
      *  - After splitting, return the pointer to the new leaf.
      */
 
+    // 1. "Every leaf node provides a method 'index(k)'..."
+    //    Find the index where the key *should* be, or where it *is* if it exists.
     const auto index = leaf_node->index(key);
 
-    if (leaf_node->leaf_key(index) == key)
+    // 2. "Check if the leaf node already contains the key"
+    //    We do this by checking if the key at the found 'index' is an exact match.
+    //    (We must also check index < size() to avoid reading past the end)
+    if (index < leaf_node->size() && leaf_node->leaf_key(index) == key)
     {
-        if constexpr (U == false)
+        // 3. "If yes and the tree is non-unique: add the value..."
+        //    We use 'if constexpr' to check the 'U' (Unique) template parameter.
+        if constexpr (U == false) // 'U' is false (Non-Unique tree)
         {
+            // 'leaf_node->value(index)' returns a std::set<V>. We add the new value.
             leaf_node->value(index).insert(value);
         }
+        // 4. "If yes and the tree is unique: Just return a 'nullptr'."
+        //    (If 'U' is true, we do nothing because duplicates are not allowed).
     }
+    // 5. "If the key is not in the node, check for space..."
+    //    The key is new. Check if the node is *not* full.
     else if (leaf_node->is_full() == false)
     {
+        // 6. "If the node is not full, insert the new pair..."
+        //    The 'insert_value' helper adds the (key, value) pair at the correct 'index'.
         leaf_node->insert_value(index, value, key);
     }
+    // 7. "Otherwise, we have to split the node."
+    //    The key is new, but the node is full.
     else
     {
+        // 8. Call the split helper. This modifies 'leaf_node' (left half)
+        //    and returns a pointer to the new right sibling.
         auto *right_leaf = this->split_leaf_node(leaf_node);
 
+        // 9. "After splitting, ... Check whether the key should take place
+        //    in the given leaf or the new leaf..."
+        //    We compare our 'key' to the *first key* in the *new* right node.
         if (key < right_leaf->leaf_key(0))
         {
+            // 10. The key belongs in the original (left) node.
+            //     We find its new index (since the node changed) and insert.
             leaf_node->insert_value(leaf_node->index(key), value, key);
         }
         else
         {
+            // 11. The key belongs in the new (right) node.
+            //     We find its index *in that new node* and insert.
             right_leaf->insert_value(right_leaf->index(key), value, key);
         }
 
+        // 12. "After splitting, return the pointer to the new leaf."
+        //     This return value signals to the calling 'insert' function
+        //     that a split occurred and an internal node must be updated.
         return right_leaf;
     }
 
+    // 13. If we are here, we either inserted into a non-full node,
+    //     or added to a non-unique key, or did nothing for a unique key.
+    //     In all cases, no split occurred, so we return 'nullptr'.
     return nullptr;
 }
 } // namespace beedb::index::bplustree
