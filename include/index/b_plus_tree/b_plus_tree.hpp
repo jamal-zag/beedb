@@ -65,7 +65,15 @@ BPlusTreeNode<K, V, U> *BPlusTree<K, V, U>::locate_leaf(
 
     Node *current_node = this->_root;
 
-    // TODO: Insert your code here.
+    while (current_node->is_inner())
+    {
+        if (node_path)
+        {
+            node_path->push_back(current_node);
+        }
+
+        current_node = current_node->child(key);
+    }
 
     return current_node;
 }
@@ -101,9 +109,40 @@ std::optional<typename ReturnValue<V, U>::type> BPlusTree<K, V, U>::get([[maybe_
      *  - Otherwise return an empty result, using "return std::nullopt;".
      */
 
-    // TODO: Insert your code here.
+    // 1. Locate the leaf node
+    auto *leaf = this->locate_leaf(key);
 
-    return std::nullopt;
+    // 2. Check if the tree is empty (leaf not found)
+    if (leaf == nullptr)
+    {
+        // Return an empty optional of the correct type
+        if constexpr (U) {
+            return std::optional<V>{std::nullopt};
+        } else {
+            return std::optional<std::set<V>>{std::nullopt};
+        }
+    }
+
+    // 3. Find the index for the key
+    const auto index = leaf->index(key);
+
+    // 4. Check if the index is valid AND the key is an exact match
+    if (index < leaf->size() && leaf->leaf_key(index) == key)
+    {
+        // Key found. The value() method will return V or std::set<V>
+        // based on U. We wrap it in std::make_optional to return.
+        return std::make_optional(leaf->value(index));
+    }
+    else
+    {
+        // Key not found in the leaf
+        if constexpr (U) {
+            return std::optional<V>{std::nullopt};
+        } else {
+            return std::optional<std::set<V>>{std::nullopt};
+        }
+    }
+
 }
 
 template <typename K, typename V, bool U>
@@ -152,7 +191,36 @@ std::optional<std::set<V>> BPlusTree<K, V, U>::get([[maybe_unused]] const K key_
 
     std::set<V> values;
 
-    // TODO: Insert your code here.
+    auto *leaf = this->locate_leaf(key_from);
+
+    while (leaf != nullptr)
+    {
+        for (auto i = leaf->index(key_from); i < leaf->size(); i++)
+        {
+            const auto key = leaf->leaf_key(i);
+            if (key >= key_from && key < key_to)
+            {
+                if constexpr (U)
+                {
+                    values.insert(leaf->value(i));
+                }
+                else
+                {
+                    auto value = leaf->value(i);
+                    values.insert(value.begin(), value.end());
+                }
+            }
+        }
+
+        if (leaf->leaf_key(leaf->size() - 1) < key_to && leaf->right() != nullptr)
+        {
+            leaf = leaf->right();
+        }
+        else
+        {
+            leaf = nullptr;
+        }
+    }
 
     return values;
 }
@@ -199,7 +267,34 @@ BPlusTreeNode<K, V, U> *BPlusTree<K, V, U>::insert_into_leaf([[maybe_unused]] BP
      *  - After splitting, return the pointer to the new leaf.
      */
 
-    // TODO: Insert your code here.
+    const auto index = leaf_node->index(key);
+
+    if (leaf_node->leaf_key(index) == key)
+    {
+        if constexpr (U == false)
+        {
+            leaf_node->value(index).insert(value);
+        }
+    }
+    else if (leaf_node->is_full() == false)
+    {
+        leaf_node->insert_value(index, value, key);
+    }
+    else
+    {
+        auto *right_leaf = this->split_leaf_node(leaf_node);
+
+        if (key < right_leaf->leaf_key(0))
+        {
+            leaf_node->insert_value(leaf_node->index(key), value, key);
+        }
+        else
+        {
+            right_leaf->insert_value(right_leaf->index(key), value, key);
+        }
+
+        return right_leaf;
+    }
 
     return nullptr;
 }
