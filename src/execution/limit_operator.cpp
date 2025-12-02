@@ -61,7 +61,7 @@ beedb::util::optional<beedb::table::Tuple> LimitOperator::next()
      *    "this->child()->next()" which is an optional tuple that
      *    may contain a tuple or not.
      *  - You can ask the optional tuple if it has a value with
-     *    "tuple->has_value()".
+     *    "tuple.has_value()".
      *  - The type "beedb::util::optional" is inspired by std::optional,
      *    take a look to https://en.cppreference.com/w/cpp/utility/optional
      *
@@ -76,7 +76,38 @@ beedb::util::optional<beedb::table::Tuple> LimitOperator::next()
      *    no tuple (by "return {};").
      */
 
-    // TODO: Insert your code here.
+    // Procedure: The first time this function is called skip "this->_offset" tuples.
+    if (!this->_has_skipped)
+    {
+        for (std::uint64_t i = 0; i < this->_offset; ++i)
+        {
+            auto tuple = this->child()->next();
+
+            // If the child runs out of tuples while skipping, we return empty
+            if (!tuple.has_value())
+            {
+                this->_has_skipped = true;
+                return {};
+            }
+        }
+        this->_has_skipped = true;
+    }
+
+    // Procedure: When the limit is reached (you have to count by yourself)
+    if (this->_count >= this->_limit)
+    {
+        return {};
+    }
+
+    // Procedure: Ask the child operator for the next tuple
+    auto tuple = this->child()->next();
+
+    // Check if the tuple has a value
+    if (tuple.has_value())
+    {
+        this->_count++;
+        return tuple;
+    }
 
     return {};
 }
